@@ -77,8 +77,8 @@ int main()
     float pressure = 0, temperature = 0, humidity = 0, sea_level_pressure = 0, p_new = 0, p_old = 0;
     int act_press_trnd = 0;
     circularQueue *q = initQueue(36);
-    FILE *output;
-    char *received = calloc(1, BUFFERSIZE);
+    // FILE *output;
+    
 
     if (listen(server_fd, 1) < 0)
     {
@@ -136,7 +136,7 @@ int main()
                 if (client_socket[i] == 0)
                 {
                     client_socket[i] = new_socket;
-                    printf("Adding to list of sockets as %d\n", i);
+                    //printf("Adding to list of sockets as %d\n", i);
 
                     break;
                 }
@@ -146,10 +146,12 @@ int main()
         for (i = 0; i < max_clients; i++)
         {
             sd = client_socket[i];
-            received[0] = '\0';
+            // received = NULL;
+            char *received = calloc(1, BUFFERSIZE);
 
             if (FD_ISSET(sd, &readfds))
             {
+
                 // Check if it was for closing , and also read the
                 // incoming message
                 if ((valread = read(sd, received, BUFFERSIZE)) == 0)
@@ -171,8 +173,8 @@ int main()
                         act_case = caseCalculation(act_press_trnd, sea_level_pressure);
                         result = lookUpTable(act_case);
 
-                        fprintf(output, "%d, %s\n", act_case, result);
-                        fclose(output);
+                        // fprintf(output, "%d, %s\n", act_case, result);
+                        // fclose(output);
 
                         // printf("%d, %s\n", act_case, result);
                     }
@@ -183,8 +185,8 @@ int main()
 
                     if (strstr(received, "P:") != NULL)
                     {
-                        fprintf(output, "%s\n", received);
-                        fclose(output);
+                        //printf("%s\n", received);
+                        //fclose(output);
 
                         char *pressure_str = (char *)calloc(1, BUFFERSIZE);
                         char *temperature_str = (char *)calloc(1, BUFFERSIZE);
@@ -217,38 +219,41 @@ int main()
 
                         free(pressure_str);
                         free(temperature_str);
-                        close(sd);
+                        //close(sd);
 
                         enqueue(q, pressure);
                     }
-                    /*else if (strcmp(received, "FORECAST") == 0)
+
+                    else
                     {
-                        fprintf(output, "%s\n", received);
-                        fclose(output);
-                        if (isFull(q))
+
+                        if (strcmp(received, "FORECAST") == 0)
                         {
-                            send(new_socket, result, strlen(result), 0);
-                            close(new_socket);
+                            // fprintf(output, "%s\n", received);
+                            // fclose(output);
+                            if (isFull(q))
+                            {
+                                send(sd, result, strlen(result), 0);
+                            }
+                            else
+                            {
+                                char *message = "Non ci sono abbastanza dati, Torna più tardi!";
+                                send(sd, message, strlen(message), 0);
+                            }
                         }
-                        else
+                        else if (strcmp(received, "S_VALUE") == 0)
                         {
-                            char *message = "Non ci sono abbastanza dati, Torna più tardi!";
-                            send(new_socket, message, strlen(message), 0);
-                            close(new_socket);
+                            // fprintf(output, "%s\n", received);
+                            // fclose(output);
+                            char *message = calloc(1, BUFFERSIZE);
+                            sprintf(message, "temperatura: %.f C, umidità: %.f %, pressione: %.2f mBar\n", temperature, humidity, pressure);
+                            send(sd, message, strlen(message), 0);
+                            free(message);
                         }
                     }
-                    else if (strcmp(received, "S_VALUE") == 0)
-                    {
-                        fprintf(output, "%s\n", received);
-                        fclose(output);
-                        char *message = calloc(1, BUFFERSIZE);
-                        sprintf(message, "temperatura: %.2f C, umidità: %.2f %, pressione: %.2f mBar\n", temperature, humidity, pressure);
-                        send(new_socket, message, strlen(message), 0);
-                        close(new_socket);
-                        free(message);
-                    }*/
                 }
             }
+            free(received);
         }
 
         // free(received);
