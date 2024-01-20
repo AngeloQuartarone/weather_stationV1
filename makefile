@@ -7,7 +7,7 @@ VFLAGS=--leak-check=full --show-leak-kinds=all --track-origins=yes -s
 
 default: server
 
-server: src/server.o src/lib/zambretti.o src/lib/circularQueue.o
+server: ./src/server.o ./lib/zambretti.o ./lib/circularQueue.o
 	echo
 	echo "- Compiling files..."
 	$(CC) $(CFLAGS) $^ -o $@ -lm
@@ -17,10 +17,13 @@ server: src/server.o src/lib/zambretti.o src/lib/circularQueue.o
 run: server
 	nohup ./server &
 
+test: server
+	./server
+
 clean: 
 	echo
 	echo "- Removing files..."
-	rm server ./src/lib/*.o ./src/*.o
+	rm server ./lib/*.o ./src/*.o ./nohup.out ./log/*.log
 	echo "- All clean!"
 	echo
 

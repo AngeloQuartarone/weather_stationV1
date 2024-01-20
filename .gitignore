@@ -1,2 +1,4 @@
 .vscode/
 client.py
+nohup.out
+/log/

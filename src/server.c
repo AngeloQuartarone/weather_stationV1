@@ -13,8 +13,9 @@
 #include <signal.h>
 #include <errno.h>
 #include <fcntl.h>
-#include "./lib/circularQueue.h"
-#include "./lib/zambretti.h"
+#include <time.h>
+#include "../lib/circularQueue.h"
+#include "../lib/zambretti.h"
 
 #define PORT 8080
 #define BUFFERSIZE 128
@@ -40,8 +41,8 @@ int main()
     char *result = NULL;
 
     fd_set readfds;
-    int server_fd, addrlen, new_socket, client_socket[30],
-        max_clients = 30, activity, i, valread, sd;
+    int server_fd, addrlen, new_socket, client_socket[36],
+        max_clients = 36, activity, i, valread, sd;
     int max_sd;
 
     struct timeval timeout;
@@ -77,8 +78,9 @@ int main()
     float pressure = 0, temperature = 0, humidity = 0, sea_level_pressure = 0, p_new = 0, p_old = 0;
     int act_press_trnd = 0;
     circularQueue *q = initQueue(36);
-    // FILE *output;
-    
+    FILE *dataIn_log;
+    FILE *dataOut_log;
+    time_t ltime;
 
     if (listen(server_fd, 1) < 0)
     {
@@ -90,30 +92,29 @@ int main()
 
     while (running)
     {
-        // clear the socket set
+        char *received = calloc(1, BUFFERSIZE);
+        char *message = calloc(1, BUFFERSIZE);
+
         FD_ZERO(&readfds);
-        // add master socket to set
         FD_SET(server_fd, &readfds);
         max_sd = server_fd;
 
-        // add child sockets to set
         for (i = 0; i < max_clients; i++)
         {
-            // socket descriptor
             sd = client_socket[i];
 
-            // if valid socket descriptor then add to read list
             if (sd > 0)
+            {
                 FD_SET(sd, &readfds);
+            }
 
-            // highest file descriptor number, need it for the select function
             if (sd > max_sd)
+            {
                 max_sd = sd;
+            }
         }
 
-        // wait for an activity on one of the sockets , timeout is NULL ,
-        // so wait indefinitely
-        activity = select(max_sd + 1, &readfds, NULL, NULL, NULL);
+        activity = select(max_sd + 1, &readfds, NULL, NULL, &timeout);
         if ((activity < 0) && (errno != EINTR))
         {
             printf("select error");
@@ -121,23 +122,17 @@ int main()
         ssize_t bytesRead;
         if (FD_ISSET(server_fd, &readfds))
         {
-            // ssize_t bytesRead = read(new_socket, received, BUFFERSIZE);
-
             if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t *)&addrlen)) < 0)
             {
                 perror("accept");
                 exit(EXIT_FAILURE);
             }
 
-            // add new socket to array of sockets
             for (i = 0; i < max_clients; i++)
             {
-                // if position is empty
                 if (client_socket[i] == 0)
                 {
                     client_socket[i] = new_socket;
-                    //printf("Adding to list of sockets as %d\n", i);
-
                     break;
                 }
             }
@@ -145,48 +140,46 @@ int main()
 
         for (i = 0; i < max_clients; i++)
         {
+
             sd = client_socket[i];
-            // received = NULL;
-            char *received = calloc(1, BUFFERSIZE);
 
             if (FD_ISSET(sd, &readfds))
             {
-
-                // Check if it was for closing , and also read the
-                // incoming message
                 if ((valread = read(sd, received, BUFFERSIZE)) == 0)
                 {
-                    // Close the socket and mark as 0 in list for reuse
                     close(sd);
                     client_socket[i] = 0;
                 }
                 else
                 {
-
-                    if (isFull(q))
+                    ltime = time(NULL);
+                    dataIn_log = fopen("./log/data_received.log", "a");
+                    if (dataIn_log != NULL)
                     {
-                        p_new = q->arr[1];
-                        p_old = q->arr[35];
+                        struct tm *p = localtime(&ltime);
+                        char s[32];
 
-                        act_press_trnd = pressureTrend(p_new, p_old);
-                        sea_level_pressure = pressureSeaLevel(temperature, pressure);
-                        act_case = caseCalculation(act_press_trnd, sea_level_pressure);
-                        result = lookUpTable(act_case);
+                        strftime(s, sizeof(s), "%a %b %d %H:%M:%S %Y", p);
 
-                        // fprintf(output, "%d, %s\n", act_case, result);
-                        // fclose(output);
-
-                        // printf("%d, %s\n", act_case, result);
+                        fprintf(dataIn_log, "%s -> %s\n", s, received);
+                        fclose(dataIn_log);
+                    }
+                    else
+                    {
+                        printf("fopen error");
+                        exit(EXIT_FAILURE);
                     }
 
-                    // printf("Server in attesa di connessioni...\n");
+                    p_new = q->front;
+                    p_old = q->rear;
 
-                    // char *received = calloc(1, BUFFERSIZE);
+                    act_press_trnd = pressureTrend(p_new, p_old);
+                    sea_level_pressure = pressureSeaLevel(temperature, pressure);
+                    act_case = caseCalculation(act_press_trnd, sea_level_pressure);
+                    result = lookUpTable(act_case);
 
                     if (strstr(received, "P:") != NULL)
                     {
-                        //printf("%s\n", received);
-                        //fclose(output);
 
                         char *pressure_str = (char *)calloc(1, BUFFERSIZE);
                         char *temperature_str = (char *)calloc(1, BUFFERSIZE);
@@ -211,52 +204,61 @@ int main()
                         strtok(tmp, "/:");
                         pressure = atof(strtok(NULL, "")) / 100;
 
-                        // printf("ricevuto: %s\n", received);
-                        // printf("temperatura: %f, pressione: %f\n", temperature, pressure);
-
-                        char *message = "OK";
+                        strcpy(message, "OK");
                         send(new_socket, message, strlen(message), 0);
 
                         free(pressure_str);
                         free(temperature_str);
-                        //close(sd);
 
                         enqueue(q, pressure);
                     }
 
                     else
                     {
+                        sprintf(message, "%d, %s", act_case, result);
+                        dataOut_log = fopen("./log/data_sended.log", "a");
 
+                        if (dataOut_log != NULL)
+                        {
+                            // ltime = time(NULL);
+                            struct tm *p = localtime(&ltime);
+                            char s[32];
+
+                            strftime(s, sizeof(s), "%a %b %d %H:%M:%S %Y", p);
+
+                            fprintf(dataOut_log, "%s -> %s\n", s, message);
+                            fclose(dataOut_log);
+                        }
+                        
                         if (strcmp(received, "FORECAST") == 0)
                         {
-                            // fprintf(output, "%s\n", received);
-                            // fclose(output);
                             if (isFull(q))
                             {
-                                send(sd, result, strlen(result), 0);
+                                send(sd, message, strlen(result), 0);
                             }
                             else
                             {
-                                char *message = "Non ci sono abbastanza dati, Torna più tardi!";
+                                sprintf(message, "Inaccurate forecast, try again later.\nActual forecast: %d, %s", act_case, result);
                                 send(sd, message, strlen(message), 0);
                             }
                         }
                         else if (strcmp(received, "S_VALUE") == 0)
                         {
-                            // fprintf(output, "%s\n", received);
-                            // fclose(output);
-                            char *message = calloc(1, BUFFERSIZE);
-                            sprintf(message, "temperatura: %.f C, umidità: %.f %, pressione: %.2f mBar\n", temperature, humidity, pressure);
+                            sprintf(message, "temperatura: %.f C, umidità: %.f %, pressione: %.2f mBar", temperature, humidity, pressure);
                             send(sd, message, strlen(message), 0);
-                            free(message);
                         }
                     }
                 }
             }
+        }
+        if (received != NULL)
+        {
             free(received);
         }
-
-        // free(received);
+        if (message != NULL)
+        {
+            free(message);
+        }
     }
 
     deleteQueue(q);
