@@ -59,19 +59,23 @@ float pressureSeaLevel(float t, float p)
  */
 int caseCalculation(int c, float p)
 {
+    float x = 0;
     switch (c)
     {
     case FALLING:
-        return 127 - (0.12 * p);
+        x = 127 - (0.12 * p);
         break;
     case STEADY:
-        return 144 - (0.13 * p);
+        x = 144 - (0.13 * p);
         break;
     case RISING:
-        return 185 - (0.16 * p);
+        x = 185 - (0.16 * p);
+        break;
     default:
         return -1;
     }
+
+    return (int)roundf(x);
 }
 
 /**

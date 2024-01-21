@@ -1,6 +1,3 @@
-// il problema è nella sincronizzazione
-// provare a dividere comunicazione tra server e client e tra server ed esp32
-
 #define _POSIX_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,7 +15,7 @@
 #include "../lib/zambretti.h"
 
 #define PORT 8080
-#define BUFFERSIZE 128
+#define BUFFERSIZE 256
 
 int running = 1;
 
@@ -82,7 +79,7 @@ int main()
     FILE *dataOut_log;
     time_t ltime;
 
-    if (listen(server_fd, 1) < 0)
+    if (listen(server_fd, 3) < 0)
     {
         perror("listen");
         exit(EXIT_FAILURE);
@@ -115,11 +112,12 @@ int main()
         }
 
         activity = select(max_sd + 1, &readfds, NULL, NULL, &timeout);
+
         if ((activity < 0) && (errno != EINTR))
         {
             printf("select error");
         }
-        ssize_t bytesRead;
+
         if (FD_ISSET(server_fd, &readfds))
         {
             if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t *)&addrlen)) < 0)
@@ -142,6 +140,15 @@ int main()
         {
 
             sd = client_socket[i];
+
+            p_new = q->front;
+            p_old = q->rear;
+
+            act_press_trnd = pressureTrend(p_new, p_old);
+            sea_level_pressure = pressureSeaLevel(temperature, pressure);
+            act_case = caseCalculation(act_press_trnd, sea_level_pressure);
+            result = lookUpTable(act_case);
+            // printf("trend: %d, sea level: %f", act_press_trnd, sea_level_pressure);
 
             if (FD_ISSET(sd, &readfds))
             {
@@ -170,14 +177,6 @@ int main()
                         exit(EXIT_FAILURE);
                     }
 
-                    p_new = q->front;
-                    p_old = q->rear;
-
-                    act_press_trnd = pressureTrend(p_new, p_old);
-                    sea_level_pressure = pressureSeaLevel(temperature, pressure);
-                    act_case = caseCalculation(act_press_trnd, sea_level_pressure);
-                    result = lookUpTable(act_case);
-
                     if (strstr(received, "P:") != NULL)
                     {
 
@@ -192,17 +191,25 @@ int main()
 
                         tmp = strstr(pressure_str, "T:");
                         strtok(tmp, ":");
-                        temperature = atof(strtok(NULL, "")); // conversion pascal in millibar (check it)
+                        double t = atof(strtok(NULL, ""));
+                        if (t != (double)-1)
+                        {
+                            temperature = t;
+                        }
 
                         tmp = NULL;
                         tmp = strstr(humidity_str, "H:");
                         strtok(tmp, ":");
-                        humidity = atof(strtok(NULL, ""));
+                        double h = atof(strtok(NULL, ""));
+                        if (h != (double)-1)
+                        {
+                            humidity = h;
+                        }
 
                         tmp = NULL;
                         tmp = strstr(temperature_str, "P:");
                         strtok(tmp, "/:");
-                        pressure = atof(strtok(NULL, "")) / 100;
+                        pressure = atof(strtok(NULL, "")) / 100; // conversion pascal in millibar (check it)
 
                         strcpy(message, "OK");
                         send(new_socket, message, strlen(message), 0);
@@ -229,7 +236,7 @@ int main()
                             fprintf(dataOut_log, "%s -> %s\n", s, message);
                             fclose(dataOut_log);
                         }
-                        
+
                         if (strcmp(received, "FORECAST") == 0)
                         {
                             if (isFull(q))
@@ -244,7 +251,7 @@ int main()
                         }
                         else if (strcmp(received, "S_VALUE") == 0)
                         {
-                            sprintf(message, "temperatura: %.f C, umidità: %.f %, pressione: %.2f mBar", temperature, humidity, pressure);
+                            sprintf(message, "temperatura: %.f C, umidità: %.f %%, pressione: %.2f mBar", temperature, humidity, pressure);
                             send(sd, message, strlen(message), 0);
                         }
                     }

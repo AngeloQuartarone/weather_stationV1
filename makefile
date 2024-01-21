@@ -16,6 +16,7 @@ server: ./src/server.o ./lib/zambretti.o ./lib/circularQueue.o
 
 run: server
 	nohup ./server &
+	nohup python3 client.py &
 
 test: server
 	./server
@@ -26,6 +27,9 @@ clean:
 	rm server ./lib/*.o ./src/*.o ./nohup.out ./log/*.log
 	echo "- All clean!"
 	echo
+
+stop:
+	pkill --signal 9 server && pkill --signal 9 -f client.py
 
 
 server.o: src/server.c src/lib/zambretti.h src/lib/circularQueue.h
