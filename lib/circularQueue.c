@@ -1,6 +1,6 @@
 #include "circularQueue.h"
 
-//i dati vengono inseritoi con politica lifo, il dato più nuovo sta in prima posizione dell'array
+// i dati vengono inseritoi con politica lifo, il dato più nuovo sta in prima posizione dell'array
 
 circularQueue *initQueue(int size)
 {
@@ -33,13 +33,13 @@ int enqueue(circularQueue *q, float val)
 {
     if (isFull(q))
     {
-        return -1;
+        q->front = (q->front + 1) % q->size;
     }
     else
     {
         q->rear = (q->rear + 1) % q->size;
-        q->arr[q->rear] = val;
     }
+    q->arr[q->rear] = val;
     return 0;
 }
 
@@ -85,7 +85,7 @@ void deleteQueue(circularQueue *q)
     if(dequeue(q) == -1){
         printf("dequeue su coda vuota\n");
     }
-   
+
      if(enqueue(q, 45) == -1){
         printf("enqueue su coda piena\n");
     }

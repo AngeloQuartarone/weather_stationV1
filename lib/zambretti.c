@@ -22,11 +22,11 @@ int pressureTrend(int new, int old)
 {
     int act_press_trnd = -1;
 
-    if (new - old < -160)
+    if (new - old < -1.6)
     {
         act_press_trnd = FALLING;
     }
-    else if (new - old > 160)
+    else if (new - old > 1.6)
     {
         act_press_trnd = RISING;
     }

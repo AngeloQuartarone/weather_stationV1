@@ -20,6 +20,7 @@
 int running = 1;
 
 void *fun_sig_handler(void *);
+void errorLog(FILE *f, char *s);
 
 int main()
 {
@@ -36,6 +37,10 @@ int main()
     int opt = 1;
     int act_case = 0;
     char *result = NULL;
+    char *error_string;
+    error_string = calloc(1, BUFFERSIZE);
+
+    FILE *error_log;
 
     fd_set readfds;
     int server_fd, addrlen, new_socket, client_socket[36],
@@ -46,19 +51,27 @@ int main()
     timeout.tv_sec = 1;
     timeout.tv_usec = 0;
 
+    if ((error_log = fopen("./log/error.log", "a")) == NULL)
+    {
+        perror("error fopen");
+        exit(EXIT_FAILURE);
+    }
+
     for (i = 0; i < max_clients; i++)
     {
         client_socket[i] = 0;
     }
 
-    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
+    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
     {
-        perror("socket failed");
+        strcpy(error_string, "socket");
+        errorLog(error_log, error_string);
         exit(EXIT_FAILURE);
     }
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)))
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1)
     {
-        perror("setsockopt");
+        strcpy(error_string, "setsockopt");
+        errorLog(error_log, error_string);
         exit(EXIT_FAILURE);
     }
 
@@ -66,9 +79,10 @@ int main()
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(PORT);
 
-    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0)
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) == -1)
     {
-        perror("bind failed");
+        strcpy(error_string, "bind");
+        errorLog(error_log, error_string);
         exit(EXIT_FAILURE);
     }
 
@@ -76,12 +90,14 @@ int main()
     int act_press_trnd = 0;
     circularQueue *q = initQueue(36);
     FILE *dataIn_log;
-    FILE *dataOut_log;
+
+    // FILE *dataOut_log;
     time_t ltime;
 
-    if (listen(server_fd, 3) < 0)
+    if (listen(server_fd, 3) == -1)
     {
-        perror("listen");
+        strcpy(error_string, "listen");
+        errorLog(error_log, error_string);
         exit(EXIT_FAILURE);
     }
 
@@ -90,7 +106,19 @@ int main()
     while (running)
     {
         char *received = calloc(1, BUFFERSIZE);
+        if (received == NULL)
+        {
+            strcpy(error_string, "calloc received");
+            errorLog(error_log, error_string);
+            exit(EXIT_FAILURE);
+        }
         char *message = calloc(1, BUFFERSIZE);
+        if (message == NULL)
+        {
+            strcpy(error_string, "calloc message");
+            errorLog(error_log, error_string);
+            exit(EXIT_FAILURE);
+        }
 
         FD_ZERO(&readfds);
         FD_SET(server_fd, &readfds);
@@ -111,18 +139,26 @@ int main()
             }
         }
 
-        activity = select(max_sd + 1, &readfds, NULL, NULL, &timeout);
+        if ((activity = select(max_sd + 1, &readfds, NULL, NULL, &timeout)) == -1)
+        {
+            strcpy(error_string, "select");
+            errorLog(error_log, error_string);
+            exit(EXIT_FAILURE);
+        }
 
         if ((activity < 0) && (errno != EINTR))
         {
-            printf("select error");
+            strcpy(error_string, "if activity EINTR");
+            errorLog(error_log, error_string);
+            exit(EXIT_FAILURE);
         }
 
         if (FD_ISSET(server_fd, &readfds))
         {
-            if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t *)&addrlen)) < 0)
+            if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t *)&addrlen)) == -1)
             {
-                perror("accept");
+                strcpy(error_string, "accept");
+                errorLog(error_log, error_string);
                 exit(EXIT_FAILURE);
             }
 
@@ -141,18 +177,27 @@ int main()
 
             sd = client_socket[i];
 
-            p_new = q->front;
-            p_old = q->rear;
+            p_new = q->arr[q->rear];
+            p_old = q->arr[q->front];
+
+            //printf("new: %f, old: %f\n", p_new, p_old);
 
             act_press_trnd = pressureTrend(p_new, p_old);
             sea_level_pressure = pressureSeaLevel(temperature, pressure);
             act_case = caseCalculation(act_press_trnd, sea_level_pressure);
             result = lookUpTable(act_case);
-            // printf("trend: %d, sea level: %f", act_press_trnd, sea_level_pressure);
+            // printf("trend: %d, sea level: %f\n", act_press_trnd, sea_level_pressure);
 
             if (FD_ISSET(sd, &readfds))
             {
-                if ((valread = read(sd, received, BUFFERSIZE)) == 0)
+                valread = read(sd, received, BUFFERSIZE);
+                /*strcpy(error_string, "read");
+                if (valread == -1)
+                {
+                    errorLog(error_log, error_string);
+                    exit(EXIT_FAILURE);
+                }*/
+                if (valread == 0 || valread == -1)
                 {
                     close(sd);
                     client_socket[i] = 0;
@@ -173,7 +218,8 @@ int main()
                     }
                     else
                     {
-                        printf("fopen error");
+                        strcpy(error_string, "fopen data received");
+                        errorLog(error_log, error_string);
                         exit(EXIT_FAILURE);
                     }
 
@@ -181,8 +227,26 @@ int main()
                     {
 
                         char *pressure_str = (char *)calloc(1, BUFFERSIZE);
+                        if (pressure_str == NULL)
+                        {
+                            strcpy(error_string, "calloc pressure string");
+                            errorLog(error_log, error_string);
+                            exit(EXIT_FAILURE);
+                        }
                         char *temperature_str = (char *)calloc(1, BUFFERSIZE);
+                        if (temperature_str == NULL)
+                        {
+                            strcpy(error_string, "calloc temperature string");
+                            errorLog(error_log, error_string);
+                            exit(EXIT_FAILURE);
+                        }
                         char *humidity_str = (char *)calloc(1, BUFFERSIZE);
+                        if (humidity_str == NULL)
+                        {
+                            strcpy(error_string, "calloc humidity string");
+                            errorLog(error_log, error_string);
+                            exit(EXIT_FAILURE);
+                        }
                         char *tmp;
 
                         strcpy(pressure_str, received);
@@ -212,20 +276,31 @@ int main()
                         pressure = atof(strtok(NULL, "")) / 100; // conversion pascal in millibar (check it)
 
                         strcpy(message, "OK");
-                        send(new_socket, message, strlen(message), 0);
+                        int x = send(new_socket, message, strlen(message), 0);
+                        if (x == -1)
+                        {
+                            strcpy(error_string, "send to arduino");
+                            errorLog(error_log, error_string);
+                            exit(EXIT_FAILURE);
+                        }
 
                         free(pressure_str);
                         free(temperature_str);
 
+                        if (isFull(q))
+                        {
+                            dequeue(q);
+                        }
                         enqueue(q, pressure);
+                        // printf("enqueued: %f\n", pressure);
                     }
 
                     else
                     {
-                        sprintf(message, "%d, %s", act_case, result);
-                        dataOut_log = fopen("./log/data_sended.log", "a");
+                        sprintf(message, "Actual forecast: %s", result);
+                        // dataOut_log = fopen("./log/data_sended.log", "a");
 
-                        if (dataOut_log != NULL)
+                        /*if (dataOut_log != NULL)
                         {
                             // ltime = time(NULL);
                             struct tm *p = localtime(&ltime);
@@ -235,24 +310,42 @@ int main()
 
                             fprintf(dataOut_log, "%s -> %s\n", s, message);
                             fclose(dataOut_log);
-                        }
+                        }*/
 
                         if (strcmp(received, "FORECAST") == 0)
                         {
                             if (isFull(q))
                             {
-                                send(sd, message, strlen(result), 0);
+                                int x = send(sd, message, strlen(message), 0);
+                                if (x == -1)
+                                {
+                                    strcpy(error_string, "send to python client 1");
+                                    errorLog(error_log, error_string);
+                                    exit(EXIT_FAILURE);
+                                }
                             }
                             else
                             {
-                                sprintf(message, "Inaccurate forecast, try again later.\nActual forecast: %d, %s", act_case, result);
-                                send(sd, message, strlen(message), 0);
+                                sprintf(message, "Inaccurate forecast, try again later.\nActual forecast: %s", result);
+                                int x = send(sd, message, strlen(message), 0);
+                                if (x == -1)
+                                {
+                                    strcpy(error_string, "send to python client 2");
+                                    errorLog(error_log, error_string);
+                                    exit(EXIT_FAILURE);
+                                }
                             }
                         }
                         else if (strcmp(received, "S_VALUE") == 0)
                         {
-                            sprintf(message, "temperatura: %.f C, umidità: %.f %%, pressione: %.2f mBar", temperature, humidity, pressure);
-                            send(sd, message, strlen(message), 0);
+                            sprintf(message, "Temperature: %.f C\nHumidity: %.f %%\nAtmosferic pressure: %.2f mBar", temperature, humidity, pressure);
+                            int x = send(sd, message, strlen(message), 0);
+                            if (x == -1)
+                            {
+                                strcpy(error_string, "send to python client 3");
+                                errorLog(error_log, error_string);
+                                exit(EXIT_FAILURE);
+                            }
                         }
                     }
                 }
@@ -287,4 +380,18 @@ void *fun_sig_handler(void *arg)
         }
     }
     return NULL;
+}
+
+void errorLog(FILE *f, char *s)
+{
+    time_t ltime;
+    ltime = time(NULL);
+    struct tm *p = localtime(&ltime);
+    char t[32];
+
+    strftime(t, sizeof(s), "%a %b %d %H:%M:%S %Y", p);
+
+    fprintf(f, "%s -> error: %s, errno: %d\n", t, s, errno);
+    fclose(f);
+    free(s);
 }
